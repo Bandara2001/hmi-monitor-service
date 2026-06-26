@@ -23,14 +23,16 @@ factory/hmi/heartbeat
 
 **Payload Example:**
 ```json
+
 {
   "device_id": "6a16c4929c4147a3c7b1ce35",
   "organization_id": "6a168f2852441533fd8f39c0",
   "plant_id": "6a16bf134694c80ad78ea4d2",
   "timestamp": "2026-06-26T10:12:36.855Z"
 }
+```
 
-2. MongoDB (Device State)
+## 2. MongoDB (Device State)
 
 Stores:
 
@@ -44,12 +46,12 @@ Logic:
 If heartbeat received → ONLINE
 If no heartbeat for 30 seconds → OFFLINE
 
-3. Offline Detection Logic
+## 3. Offline Detection Logic
 Condition	Status
 Heartbeat received within 30s	ONLINE
 No heartbeat > 30s	OFFLINE
 
-4. InfluxDB (Time Series)
+## 4. InfluxDB (Time Series)
 
 Stores:
 
