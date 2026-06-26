@@ -1,7 +1,6 @@
-
 import json
 import paho.mqtt.client as mqtt
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.database.mongo import device_collection
 from app.database.influx import influx_instance
@@ -20,18 +19,30 @@ def on_message(client, userdata, msg):
 
     print("Received:", data)
 
-    # MongoDB update
-    device_collection.update_one(
+    now = datetime.now(timezone.utc)
+
+    # -------------------------------
+    # UPSERT DEVICE (ENSURE IT EXISTS)
+    # -------------------------------
+    result = device_collection.update_one(
         {"device_id": device_id},
         {
             "$set": {
-                "last_seen": datetime.utcnow(),
+                "device_id": device_id,
+                "organization_id": org_id,
+                "plant_id": plant_id,
+                "last_seen": now,
                 "connectivity_status": "ONLINE"
             }
-        }
+        },
+        upsert=True
     )
 
-    # InfluxDB write
+    print("Mongo matched:", result.matched_count, "modified:", result.modified_count)
+
+    # -------------------------------
+    # INFLUX WRITE (HISTORY)
+    # -------------------------------
     influx_instance.write_heartbeat(
         device_id=device_id,
         organization_id=org_id,
