@@ -2,86 +2,98 @@ import time
 from datetime import datetime, timezone
 
 from app.database.mongo import device_collection
+from app.database.influx import influx_instance
 
 OFFLINE_THRESHOLD_SECONDS = 30
-CHECK_INTERVAL = 5   # reduced for faster detection
+CHECK_INTERVAL = 5
+
+
+def update_status(device, new_status, reason=None):
+    """
+    Update MongoDB and InfluxDB only if the device status changes.
+    """
+
+    device_id = device["device_id"]
+
+    if device.get("connectivity_status") == new_status:
+        return
+
+    now = datetime.now(timezone.utc)
+
+    update_data = {
+        "connectivity_status": new_status,
+        "offline_reason": reason if new_status == "OFFLINE" else None,
+        "offline_at": now if new_status == "OFFLINE" else None,
+    }
+
+    device_collection.update_one(
+        {"device_id": device_id},
+        {"$set": update_data}
+    )
+
+    influx_instance.write_status_event(
+        device_id=device_id,
+        organization_id=device["organization_id"],
+        plant_id=device["plant_id"],
+        status=new_status
+    )
+
+    print(f"{device_id} -> {new_status}")
 
 
 def run_device_monitor():
+
     print("Device monitor started...")
 
     while True:
+
         now = datetime.now(timezone.utc)
 
         devices = list(device_collection.find({}))
 
         for device in devices:
-            device_id = device.get("device_id")
-            last_seen = device.get("last_seen")
-            current_status = device.get("connectivity_status")
 
-            # -------------------------
-            # CASE 1: NO HEARTBEAT EVER
-            # -------------------------
-            if not last_seen:
-                if current_status != "OFFLINE":
-                    device_collection.update_one(
-                        {"device_id": device_id},
-                        {
-                            "$set": {
-                                "connectivity_status": "OFFLINE",
-                                "offline_reason": "NO_HEARTBEAT_YET",
-                                "offline_at": now
-                            }
-                        }
-                    )
-                    print(f"Device OFFLINE (no heartbeat): {device_id}")
+            last_seen = device.get("last_seen")
+
+            # -----------------------------------
+            # Never received heartbeat
+            # -----------------------------------
+            if last_seen is None:
+                update_status(
+                    device,
+                    "OFFLINE",
+                    "NO_HEARTBEAT_YET"
+                )
                 continue
 
-            # -------------------------
-            # TIME SAFE CHECK
-            # -------------------------
+            # -----------------------------------
+            # Make timezone aware if necessary
+            # -----------------------------------
             if last_seen.tzinfo is None:
                 last_seen = last_seen.replace(tzinfo=timezone.utc)
 
-            diff_seconds = (now - last_seen).total_seconds()
+            diff = (now - last_seen).total_seconds()
 
-            # DEBUG (optional)
-            # print(device_id, diff_seconds, current_status)
+            # -----------------------------------
+            # Device is ONLINE
+            # -----------------------------------
+            if diff <= OFFLINE_THRESHOLD_SECONDS:
 
-            # -------------------------
-            # DEVICE IS ONLINE (HEARTBEAT ACTIVE)
-            # -------------------------
-            if diff_seconds <= OFFLINE_THRESHOLD_SECONDS:
-                if current_status != "ONLINE":
-                    device_collection.update_one(
-                        {"device_id": device_id},
-                        {
-                            "$set": {
-                                "connectivity_status": "ONLINE",
-                                "offline_reason": None,
-                                "offline_at": None
-                            }
-                        }
-                    )
-                    print(f"Device ONLINE: {device_id}")
+                update_status(
+                    device,
+                    "ONLINE"
+                )
 
-            # -------------------------
-            # DEVICE IS OFFLINE (NO HEARTBEAT)
-            # -------------------------
+            # -----------------------------------
+            # Device is OFFLINE
+            # -----------------------------------
             else:
-                if current_status != "OFFLINE":
-                    device_collection.update_one(
-                        {"device_id": device_id},
-                        {
-                            "$set": {
-                                "connectivity_status": "OFFLINE",
-                                "offline_reason": "HEARTBEAT_TIMEOUT",
-                                "offline_at": now
-                            }
-                        }
-                    )
-                    print(f"Device OFFLINE: {device_id}")
+
+                update_status(
+                    device,
+                    "OFFLINE",
+                    "HEARTBEAT_TIMEOUT"
+                )
 
         time.sleep(CHECK_INTERVAL)
 

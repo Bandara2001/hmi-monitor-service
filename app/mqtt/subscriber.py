@@ -28,9 +28,6 @@ def on_message(client, userdata, msg):
         {"device_id": device_id},
         {
             "$set": {
-                "device_id": device_id,
-                "organization_id": org_id,
-                "plant_id": plant_id,
                 "last_seen": now,
                 "connectivity_status": "ONLINE"
             }
@@ -40,14 +37,7 @@ def on_message(client, userdata, msg):
 
     print("Mongo matched:", result.matched_count, "modified:", result.modified_count)
 
-    # -------------------------------
-    # INFLUX WRITE (HISTORY)
-    # -------------------------------
-    influx_instance.write_heartbeat(
-        device_id=device_id,
-        organization_id=org_id,
-        plant_id=plant_id
-    )
+    
 
 
 client = mqtt.Client()

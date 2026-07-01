@@ -6,7 +6,9 @@ from app.config.settings import (
     INFLUX_BUCKET
 )
 
+
 class InfluxDB:
+
     def __init__(self):
         self.client = InfluxDBClient(
             url=INFLUX_URL,
@@ -17,13 +19,21 @@ class InfluxDB:
         self.write_api = self.client.write_api()
         self.query_api = self.client.query_api()
 
-    def write_heartbeat(self, device_id, organization_id, plant_id):
+    def write_status_event(
+        self,
+        device_id,
+        organization_id,
+        plant_id,
+        status
+    ):
+
         point = (
-            Point("device_health")
+            Point("device_status")
             .tag("device_id", device_id)
             .tag("organization_id", organization_id)
             .tag("plant_id", plant_id)
-            .field("heartbeat", 1)
+            .tag("status", status)
+            .field("value", 1)
         )
 
         self.write_api.write(
@@ -31,10 +41,8 @@ class InfluxDB:
             record=point
         )
 
-    
     def close(self):
         self.client.close()
 
 
-# Singleton instance
 influx_instance = InfluxDB()
