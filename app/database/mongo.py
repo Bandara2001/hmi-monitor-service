@@ -8,7 +8,11 @@ class MongoDB:
 
     def get_device_collection(self):
         return self.db["Device"]
+    
+    def get_machine_collection(self):
+        return self.db["Machine"]
 
 
 mongo_db = MongoDB()
 device_collection = mongo_db.get_device_collection()
+machine_collection = mongo_db.get_machine_collection()

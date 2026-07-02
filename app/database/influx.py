@@ -41,6 +41,22 @@ class InfluxDB:
             record=point
         )
 
+    def write_machine_status(self, machine_id, status, plant_id, org_id):
+
+        point = (
+            Point("machine_status")
+            .tag("machine_id", machine_id)
+            .tag("plant_id", plant_id)
+            .tag("organization_id", org_id)
+            .field("status", status)
+            
+        )
+
+        self.write_api.write(
+            bucket=INFLUX_BUCKET,
+            record=point
+        )    
+
     def close(self):
         self.client.close()
 
