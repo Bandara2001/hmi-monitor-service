@@ -8,14 +8,19 @@ OFFLINE_THRESHOLD_SECONDS = 30
 CHECK_INTERVAL = 5
 
 
+TARGET_DEVICE_ID = "6a16c4929c4147a3c7b1ce35"
+
+
 def update_status(device, new_status, reason=None):
-    """
-    Update MongoDB and InfluxDB only if the device status changes.
-    """
 
-    device_id = device["device_id"]
+    device_id = device.get("device_id")
+    if not device_id:
+        return
 
-    if device.get("connectivity_status") == new_status:
+    current_status = device.get("connectivity_status")
+
+    
+    if current_status == new_status:
         return
 
     now = datetime.now(timezone.utc)
@@ -24,6 +29,7 @@ def update_status(device, new_status, reason=None):
         "connectivity_status": new_status,
         "offline_reason": reason if new_status == "OFFLINE" else None,
         "offline_at": now if new_status == "OFFLINE" else None,
+        "last_status_change": now
     }
 
     device_collection.update_one(
@@ -33,67 +39,56 @@ def update_status(device, new_status, reason=None):
 
     influx_instance.write_status_event(
         device_id=device_id,
-        organization_id=device["organization_id"],
-        plant_id=device["plant_id"],
+        organization_id=device.get("organization_id"),
+        plant_id=device.get("device_plant_id"),
         status=new_status
     )
 
-    print(f"{device_id} -> {new_status}")
+    print(f" {device_id} -> {new_status}")
 
 
 def run_device_monitor():
 
-    print("Device monitor started...")
+    print(" DEVICE MONITOR STARTED ")
 
     while True:
 
         now = datetime.now(timezone.utc)
 
-        devices = list(device_collection.find({}))
+        
+        device = device_collection.find_one({"device_id": TARGET_DEVICE_ID})
 
-        for device in devices:
+        if not device:
+            print(" Device not found:", TARGET_DEVICE_ID)
+            time.sleep(CHECK_INTERVAL)
+            continue
 
-            last_seen = device.get("last_seen")
+        last_seen = device.get("last_seen")
 
-            # -----------------------------------
-            # Never received heartbeat
-            # -----------------------------------
-            if last_seen is None:
-                update_status(
-                    device,
-                    "OFFLINE",
-                    "NO_HEARTBEAT_YET"
-                )
-                continue
+        # -------------------
+        # NO HEARTBEAT
+        # -------------------
+        if not last_seen:
+            update_status(device, "OFFLINE", "NO_HEARTBEAT_YET")
+            time.sleep(CHECK_INTERVAL)
+            continue
 
-            # -----------------------------------
-            # Make timezone aware if necessary
-            # -----------------------------------
-            if last_seen.tzinfo is None:
-                last_seen = last_seen.replace(tzinfo=timezone.utc)
+        if last_seen.tzinfo is None:
+            last_seen = last_seen.replace(tzinfo=timezone.utc)
 
-            diff = (now - last_seen).total_seconds()
+        diff = (now - last_seen).total_seconds()
 
-            # -----------------------------------
-            # Device is ONLINE
-            # -----------------------------------
-            if diff <= OFFLINE_THRESHOLD_SECONDS:
+        # -------------------
+        # ONLINE
+        # -------------------
+        if diff <= OFFLINE_THRESHOLD_SECONDS:
+            update_status(device, "ONLINE")
 
-                update_status(
-                    device,
-                    "ONLINE"
-                )
-
-            # -----------------------------------
-            # Device is OFFLINE
-            # -----------------------------------
-            else:
-
-                update_status(
-                    device,
-                    "OFFLINE",
-                    "HEARTBEAT_TIMEOUT"
-                )
+        # -------------------
+        # OFFLINE
+        # -------------------
+        else:
+            update_status(device, "OFFLINE", "HEARTBEAT_TIMEOUT")
 
         time.sleep(CHECK_INTERVAL)
 
